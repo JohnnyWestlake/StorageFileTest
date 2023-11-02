@@ -18,6 +18,7 @@ using Windows.UI.Xaml.Input;
 using Windows.UI.Xaml.Media;
 using Windows.UI.Xaml.Media.Imaging;
 using Windows.UI.Xaml.Hosting;
+using Windows.Storage.BulkAccess;
 
 namespace FileTest;
 
@@ -84,25 +85,46 @@ public class StorageFileImage : Control
 
     protected virtual async Task SetImageSourceAsync(object file)
     {
+        if (_sourceFile is FileInformation old)
+        {
+            old.ThumbnailUpdated -= Info_ThumbnailUpdated;
+        }
         _sourceFile = null;
 
-        StorageFile s = file as StorageFile;
+        IStorageFile s = file as IStorageFile;
 
-        if (s is null && file is FileInfo fInfo)
-            s = await fInfo.GetFileAsync();
+        //if (s is FileInformation info)
+        //{
+        //    info.ThumbnailUpdated -= Info_ThumbnailUpdated;
+        //    info.ThumbnailUpdated += Info_ThumbnailUpdated;
+        //}
 
         if (file != StorageFile)
             return;
 
         _sourceFile = s;
-        await SetImageSourceAsync(s);
+        await SetImageSourceInternalAsync(s as IStorageItem);
     }
 
-    bool IsSourceFile(StorageFile file) => file == _sourceFile;
-
-    private StorageFile _sourceFile = null;
-    protected virtual async Task SetImageSourceAsync(StorageFile file)
+    private void Info_ThumbnailUpdated(IStorageItemInformation sender, object args)
     {
+        _ = Dispatcher.RunAsync(Windows.UI.Core.CoreDispatcherPriority.Normal, () =>
+        {
+            if (StorageFile == sender)
+                _ = SetImageSourceInternalAsync(sender as IStorageItem, 0);
+        });
+    }
+
+    bool IsSourceFile(IStorageFile file) => file == StorageFile;
+
+    int MAX_TRIES = 15;
+    private IStorageFile _sourceFile = null;
+    protected virtual async Task SetImageSourceInternalAsync(
+        IStorageItem item, int attempt = 0)
+    {
+        var file = item as IStorageFile;
+        //var inf = item as FileInformation;
+
         bool retryThumb = _isRetryThumb;
         _isRetryThumb = false;
 
@@ -114,12 +136,18 @@ public class StorageFileImage : Control
         v.Opacity = 0;
         PART_Image.Source = null;
 
-        if (file == null)
+        if (item == null)
             return;
+
+        void Dispose(IRandomAccessStream stream)
+        {
+           // if (inf is not null) return;
+            stream.Dispose();
+        }
 
         // 2. Attempt to load an image stream either from file or windows thumbnail
         IRandomAccessStream stream;
-        if (!file.Attributes.HasFlag(FileAttributes.Archive)
+        if (!item.Attributes.HasFlag(FileAttributes.Archive)
             && file.ContentType.StartsWith("image"))
         {
             // 2.1. Path for image files. Load the actual file.
@@ -128,7 +156,11 @@ public class StorageFileImage : Control
         else
         {
             // 2.2. Path for other files. Request a thumbnail from windows.
-            stream = await file.GetThumbnailAsync(ThumbnailMode.SingleItem);
+            //if (inf is not null)
+            //    stream = inf.Thumbnail;
+            //else
+                stream = await ((IStorageItemProperties)file).GetThumbnailAsync(
+                    ThumbnailMode.SingleItem, 160, ThumbnailOptions.UseCurrentScale);
 
             // If we're using a thumbnail we don't want to ever show it as an "icon" if windows
             // gives that to us, so we should try to re-request it. 
@@ -137,14 +169,14 @@ public class StorageFileImage : Control
             // TODO : perhaps retry multiple times?
             if (stream is StorageItemThumbnail thumb
                 && thumb.Type == ThumbnailType.Icon
-                && !retryThumb)
+                && attempt < MAX_TRIES)
             {
-                stream.Dispose();
-                await Task.Delay(250);
+                Dispose(stream);
+                await Task.Delay(333);
                 if (StorageFile == file)
                 {
                     _isRetryThumb = true;
-                    await SetImageSourceAsync(file);
+                    await SetImageSourceInternalAsync(file, attempt+1);
                 }
 
                 return;
@@ -155,6 +187,12 @@ public class StorageFileImage : Control
         // 3. Check source is still valid after async calls
         if (!IsSourceFile(file) || stream == null)
             return;
+
+        //if (fromUpdate
+        //    && inf.Thumbnail.Type == ThumbnailType.Icon
+        //    && PART_Image.Source != null)
+        //    return;
+            
 
         // 4. Create our new display bitmap image at the desired render size
         BitmapImage bitmapImage;
@@ -181,7 +219,7 @@ public class StorageFileImage : Control
         {
             stream.Seek(0);
             await bitmapImage.SetSourceAsync(stream);
-            stream.Dispose();
+            Dispose(stream);
         }
 
         // 6. Check source is still valid after the above async call, and only fire

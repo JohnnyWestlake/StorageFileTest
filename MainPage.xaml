@@ -40,7 +40,7 @@
 
             <GridView.ItemTemplate>
                 <DataTemplate x:DataType="filetest:FileInfo">
-                    <filetest:StorageFileImage AllowIcons="True" StorageFile="{x:Bind}" />
+                    <filetest:StorageFileImage StorageFile="{x:Bind}" />
                 </DataTemplate>
             </GridView.ItemTemplate>
         </GridView>

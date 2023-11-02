@@ -41,16 +41,6 @@ public class StorageFileImage : Control
 
     public Image PART_Image { get; private set; }
 
-    public bool AllowIcons
-    {
-        get { return (bool)GetValue(AllowIconsProperty); }
-        set { SetValue(AllowIconsProperty, value); }
-    }
-
-    public static readonly DependencyProperty AllowIconsProperty =
-        DependencyProperty.Register(nameof(AllowIcons), typeof(bool), typeof(StorageFileImage), new PropertyMetadata(false));
-
-
     public Stretch Stretch
     {
         get { return (Stretch)GetValue(StretchProperty); }
@@ -147,8 +137,7 @@ public class StorageFileImage : Control
             // TODO : perhaps retry multiple times?
             if (stream is StorageItemThumbnail thumb
                 && thumb.Type == ThumbnailType.Icon
-                && !retryThumb
-                && !AllowIcons)
+                && !retryThumb)
             {
                 stream.Dispose();
                 await Task.Delay(250);
@@ -170,8 +159,7 @@ public class StorageFileImage : Control
         // 4. Create our new display bitmap image at the desired render size
         BitmapImage bitmapImage;
         bool fromCache = false;
-        if (AllowIcons
-              && stream is StorageItemThumbnail t
+        if (stream is StorageItemThumbnail t
               && t.Type == ThumbnailType.Icon
               && _iconCache.TryGetValue(file.ContentType, out BitmapImage img))
         {
@@ -181,7 +169,7 @@ public class StorageFileImage : Control
         else
         {
             bitmapImage = new() { DecodePixelType = DecodePixelType.Logical };
-            if (AllowIcons && stream is StorageItemThumbnail t2 && t2.Type == ThumbnailType.Icon)
+            if (stream is StorageItemThumbnail t2 && t2.Type == ThumbnailType.Icon)
             {
                 _iconCache[file.ContentType] = bitmapImage;
             }
